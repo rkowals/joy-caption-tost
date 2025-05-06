@@ -1,6 +1,7 @@
 import os, json, tempfile, requests, runpod
-
+import io
 import torch
+import base64
 from torch import nn
 import torch.amp.autocast_mode
 from PIL import Image
@@ -53,14 +54,23 @@ with torch.inference_mode():
 def generate(input):
     values = input["input"]
 
-    input_image_url = values.get('input_image_url')
+
+    # 1) Decode Base64 if provided
+    b64 = values.get("input_image_base64")
+    if b64:
+        input_image = Image.open(io.BytesIO(base64.b64decode(b64))).convert("RGB")
+    else:
+        # 2) Fallback to URL
+        url = values.get("input_image_url")
+        if not url:
+            return {"status": "FAILED", "error": "No image provided"}
+        file_path = download_file(url)
+        input_image = Image.open(file_path).convert("RGB")
+
     vlm_prompt = values.get('vlm_prompt', "")
     max_new_tokens = values.get('max_new_tokens', 64)
     top_k = values.get('top_k', 50)
     temperature = values.get('temperature', 1.0)
-
-    input_image = download_file(input_image_url)
-    input_image = Image.open(input_image).convert("RGB")
 
     image = clip_processor(images=input_image, return_tensors='pt').pixel_values
     image = image.to('cuda')
